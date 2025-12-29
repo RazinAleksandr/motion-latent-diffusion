@@ -77,9 +77,10 @@ def render_motion_to_gif(data_path, motion_id, output_name=None):
 
 # --- CONFIGURATION ---
 # PATH_TO_DATA = "/Users/aleksandrrazin/work/research/3d/motion-latent-diffusion/results/mld/test_ft/samples_2025-12-24-16-04-18"
-PATH_TO_DATA = "/Users/aleksandrrazin/work/research/3d/motion-latent-diffusion/results/mld/base_mld_train/samples_2025-12-24-18-28-33"
-ID_TO_SHOW = "Example_50_batch0_0"
+# PATH_TO_DATA = "/Users/aleksandrrazin/work/research/3d/motion-latent-diffusion/results/mld/mld_controlnet_train/samples_2025-12-24-23-27-31"
+PATH_TO_DATA = "/Users/aleksandrrazin/work/research/3d/motion-latent-diffusion/results/mld/mld_controlnet_train_exp1/samples_2025-12-25-23-59-59"
+ID_TO_SHOW = "Example_196_batch0_0"
 
 render_motion_to_gif(
-    PATH_TO_DATA, ID_TO_SHOW, output_name="base_mld_train_Example_50_batch0_0.gif"
+    PATH_TO_DATA, ID_TO_SHOW, output_name="w_controlnet_runing_with_pose_fixed.gif"
 )

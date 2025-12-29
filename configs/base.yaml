@@ -45,8 +45,21 @@ TEST:
   MM_NUM_TIMES: 10 # Number of times to repeat the multimodal test
   DIVERSITY_TIMES: 300 # Number of times to repeat the diversity test
   REP_I: 0
+LOGGER:
+  SACE_CHECKPOINT_EPOCH: 1
+  LOG_EVERY_STEPS: 1
+  VAL_EVERY_STEPS: 10
+  TENSORBOARD: true
+  VAL_VIS_SAMPLES: 0
+  WANDB:
+    OFFLINE: false
+    PROJECT: null
+    RESUME_ID: null
 model:
   target: 'modules'
+  is_controlnet: false
+  controlnet_scale: 1.0
+  controlnet_train_only: false
   t2m_textencoder:
     dim_word: 300
     dim_pos_ohot: 15
@@ -96,15 +109,6 @@ DATASET:
     POSE_REP: rot6d
     GLOB: true
     TRANSLATION: true
-LOGGER:
-  SACE_CHECKPOINT_EPOCH: 1
-  LOG_EVERY_STEPS: 1
-  VAL_EVERY_STEPS: 10
-  TENSORBOARD: true
-  WANDB:
-    OFFLINE: false
-    PROJECT: null
-    RESUME_ID: null
 RENDER:
   JOINT_TYPE: mmm
   INPUT_MODE: npy

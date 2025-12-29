@@ -93,6 +93,12 @@ def parse_args(phase="train"):
             help="input text and lengths with txt format",
         )
         group.add_argument(
+            "--control_pose",
+            type=str,
+            required=False,
+            help="npy file with control poses: [2,22,3] or [B,2,22,3]",
+        )
+        group.add_argument(
             "--task",
             type=str,
             required=False,
@@ -167,7 +173,8 @@ def parse_args(phase="train"):
         cfg.TRAIN.BATCH_SIZE = (params.batch_size
                                 if params.batch_size else cfg.TRAIN.BATCH_SIZE)
         cfg.DEVICE = params.device if params.device else cfg.DEVICE
-        cfg.DEBUG = not params.nodebug if params.nodebug is not None else cfg.DEBUG
+        if params.nodebug:
+            cfg.DEBUG = False
 
         # no debug in test
         cfg.DEBUG = False if phase == "test" else cfg.DEBUG
@@ -186,6 +193,7 @@ def parse_args(phase="train"):
         cfg.TEST.FOLDER = params.out_dir if params.dir else cfg.TEST.FOLDER
         cfg.DEMO.REPLICATION = params.replication
         cfg.DEMO.OUTALL = params.allinone
+        cfg.DEMO.CONTROL_POSE = params.control_pose
 
     if phase == "render":
         if params.npy:

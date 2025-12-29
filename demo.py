@@ -20,6 +20,23 @@ from mld.data.get_data import get_datasets
 from mld.data.sampling import subsample, upsample
 from mld.models.get_model import get_model
 from mld.utils.logger import create_logger
+from mld.data.humanml.scripts import motion_process as mp
+from mld.data.humanml.common.skeleton import Skeleton
+from mld.data.humanml.utils.paramUtil import t2m_raw_offsets, t2m_kinematic_chain
+
+
+def normalize_control_pose(pose_seq, joints_num=22):
+    mp.l_idx1, mp.l_idx2 = 5, 8
+    mp.fid_r, mp.fid_l = [8, 11], [7, 10]
+    mp.face_joint_indx = [2, 1, 17, 16]
+    mp.n_raw_offsets = torch.from_numpy(t2m_raw_offsets)
+    mp.kinematic_chain = t2m_kinematic_chain
+    tgt_skel = Skeleton(mp.n_raw_offsets, mp.kinematic_chain, "cpu")
+    mp.tgt_offsets = tgt_skel.get_offsets_joints(torch.from_numpy(pose_seq[0]))
+    feats, _, _, _ = mp.process_file(pose_seq, feet_thre=0.002)
+    feats = torch.from_numpy(feats).float().unsqueeze(0)
+    joints = mp.recover_from_ric(feats, joints_num).squeeze(0).cpu().numpy()
+    return joints
 
 
 def main():
@@ -174,6 +191,22 @@ def main():
         if text:
             # prepare batch data
             batch = {"length": length, "text": text}
+            if getattr(cfg.DEMO, "CONTROL_POSE", None):
+                control_pose = np.load(cfg.DEMO.CONTROL_POSE)
+                if control_pose.ndim == 3:
+                    control_pose = control_pose[None, ...]
+                if control_pose.shape[1] != 2 or control_pose.shape[-1] != 3:
+                    raise ValueError(
+                        "control_pose must have shape [2,J,3] or [B,2,J,3]"
+                    )
+                if control_pose.shape[0] == 1:
+                    control_pose = np.repeat(control_pose, len(text), axis=0)
+                normed = []
+                for pose_seq in control_pose:
+                    normed_seq = normalize_control_pose(pose_seq, joints_num=22)
+                    normed.append(normed_seq[[0, -1]])
+                control_pose = np.stack(normed, axis=0).astype(np.float32)
+                batch["control_hint"] = torch.from_numpy(control_pose).float().to(device)
 
             for rep in range(cfg.DEMO.REPLICATION):
                 # text motion transfer

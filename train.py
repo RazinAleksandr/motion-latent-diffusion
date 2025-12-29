@@ -15,6 +15,8 @@ from mld.data.get_data import get_datasets
 from mld.models.get_model import get_model
 from mld.utils.logger import create_logger
 
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 
 def main():
     # parse options

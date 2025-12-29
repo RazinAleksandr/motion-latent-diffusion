@@ -41,23 +41,41 @@ class SkipTransformerEncoder(nn.Module):
     def forward(self, src,
                 mask: Optional[Tensor] = None,
                 src_key_padding_mask: Optional[Tensor] = None,
-                pos: Optional[Tensor] = None):
+                pos: Optional[Tensor] = None,
+                controlnet_residuals: Optional[List[Tensor]] = None):
         x = src
+        res_idx = 0
+        expected = self.num_layers
 
         xs = []
         for module in self.input_blocks:
             x = module(x, src_mask=mask,
                            src_key_padding_mask=src_key_padding_mask, pos=pos)
+            if controlnet_residuals is not None:
+                if res_idx >= expected:
+                    raise ValueError("controlnet_residuals length mismatch")
+                x = x + controlnet_residuals[res_idx]
+                res_idx += 1
             xs.append(x)
 
         x = self.middle_block(x, src_mask=mask,
                            src_key_padding_mask=src_key_padding_mask, pos=pos)
+        if controlnet_residuals is not None:
+            if res_idx >= expected:
+                raise ValueError("controlnet_residuals length mismatch")
+            x = x + controlnet_residuals[res_idx]
+            res_idx += 1
 
         for (module, linear) in zip(self.output_blocks, self.linear_blocks):
             x = torch.cat([x, xs.pop()], dim=-1)
             x = linear(x)
             x = module(x, src_mask=mask,
                            src_key_padding_mask=src_key_padding_mask, pos=pos)
+            if controlnet_residuals is not None:
+                if res_idx >= expected:
+                    raise ValueError("controlnet_residuals length mismatch")
+                x = x + controlnet_residuals[res_idx]
+                res_idx += 1
 
         if self.norm is not None:
             x = self.norm(x)

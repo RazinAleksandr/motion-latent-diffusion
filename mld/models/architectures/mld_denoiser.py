@@ -137,6 +137,8 @@ class MldDenoiser(nn.Module):
                 timestep,
                 encoder_hidden_states,
                 lengths=None,
+                control_embeds=None,
+                controlnet_residuals=None,
                 **kwargs):
         # 0.  dimension matching
         # sample [latent_dim[0], batch_size, latent_dim] <= [batch_size, latent_dim[0], latent_dim[1]]
@@ -178,6 +180,9 @@ class MldDenoiser(nn.Module):
         else:
             raise TypeError(f"condition type {self.condition} not supported")
 
+        if control_embeds is not None:
+            emb_latent = torch.cat((emb_latent, control_embeds), 0)
+
         # 4. transformer
         if self.arch == "trans_enc":
             if self.diffusion_only:
@@ -194,7 +199,26 @@ class MldDenoiser(nn.Module):
             #     # [seqlen+1, bs, d]
             #     # todo change to query_pos_decoder
             xseq = self.query_pos(xseq)
-            tokens = self.encoder(xseq)
+            if controlnet_residuals is not None:
+                seq_len = xseq.shape[0]
+                controlnet_residuals = [r[:seq_len] for r in controlnet_residuals]
+            if self.ablation_skip_connection:
+                tokens = self.encoder(
+                    xseq,
+                    controlnet_residuals=controlnet_residuals,
+                )
+            else:
+                if controlnet_residuals is None:
+                    tokens = self.encoder(xseq)
+                else:
+                    x = xseq
+                    for idx, layer in enumerate(self.encoder.layers):
+                        x = layer(x)
+                        if idx < len(controlnet_residuals):
+                            x = x + controlnet_residuals[idx]
+                    if self.encoder.norm is not None:
+                        x = self.encoder.norm(x)
+                    tokens = x
 
             if self.diffusion_only:
                 sample = tokens[emb_latent.shape[0]:]
