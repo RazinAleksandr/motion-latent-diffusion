@@ -113,6 +113,8 @@ class ControlNetDenoiser(nn.Module):
         sample = sample.permute(1, 0, 2)
         if lengths not in [None, []]:
             mask = lengths_to_mask(lengths, sample.device)
+        else:
+            mask = None
 
         timesteps = timestep.expand(sample.shape[1]).clone()
         time_emb = self.time_proj(timesteps)
@@ -140,17 +142,41 @@ class ControlNetDenoiser(nn.Module):
             raise TypeError(f"condition type {self.condition} not supported")
 
         if controlnet_cond is not None:
-            if controlnet_cond.dim() == 3 and controlnet_cond.shape[0] == sample.shape[1]:
+            if controlnet_cond.dim() != 3:
+                raise ValueError("controlnet_cond must be [B,2,D] or [2,B,D]")
+            # normalize to [n_tokens, B, D]
+            if controlnet_cond.shape[0] == sample.shape[1]:
                 controlnet_cond = controlnet_cond.permute(1, 0, 2)
-            control_summary = controlnet_cond.mean(dim=0, keepdim=True)
-            emb_latent = emb_latent + self.control_proj(control_summary)
+            elif controlnet_cond.shape[1] != sample.shape[1]:
+                raise ValueError("controlnet_cond first two dims must match control tokens and batch size")
+            control_tokens = self.control_proj(controlnet_cond)
+            emb_latent = torch.cat((emb_latent, control_tokens), 0)
 
         if self.diffusion_only:
             sample = self.pose_embd(sample)
             xseq = torch.cat((emb_latent, sample), axis=0)
+            motion_first = False
         else:
             xseq = torch.cat((sample, emb_latent), axis=0)
+            motion_first = True
 
+        # zero padded positions so residuals do not leak padding info
+        valid_mask = None
+        if mask is not None:
+            pad_len = xseq.shape[0] - emb_latent.shape[0]
+            if pad_len == mask.T.shape[0]:
+                # emb_latent tokens are always valid (ones), mask covers motion tokens
+                ones = torch.ones(emb_latent.shape[0], mask.T.shape[1], device=mask.device, dtype=mask.dtype)
+                if motion_first:
+                    valid_mask = torch.cat((mask.T, ones), dim=0)
+                else:
+                    valid_mask = torch.cat((ones, mask.T), dim=0)
+                xseq = xseq * valid_mask.unsqueeze(-1)
+
+        if valid_mask is not None:
+            attn_pad_mask = (valid_mask.T == 0).bool()
+        else:
+            attn_pad_mask = None
         xseq = self.query_pos(xseq)
 
         if self.ablation_skip_connection:
@@ -158,15 +184,21 @@ class ControlNetDenoiser(nn.Module):
             xs = []
             residuals = []
             for module in self.encoder.input_blocks:
-                x = module(x)
+                x = module(x, src_key_padding_mask=attn_pad_mask)
+                if valid_mask is not None:
+                    x = x * valid_mask.unsqueeze(-1)
                 residuals.append(x)
                 xs.append(x)
-            x = self.encoder.middle_block(x)
+            x = self.encoder.middle_block(x, src_key_padding_mask=attn_pad_mask)
+            if valid_mask is not None:
+                x = x * valid_mask.unsqueeze(-1)
             residuals.append(x)
             for module, linear in zip(self.encoder.output_blocks, self.encoder.linear_blocks):
                 x = torch.cat([x, xs.pop()], dim=-1)
                 x = linear(x)
-                x = module(x)
+                x = module(x, src_key_padding_mask=attn_pad_mask)
+                if valid_mask is not None:
+                    x = x * valid_mask.unsqueeze(-1)
                 residuals.append(x)
             if self.encoder.norm is not None:
                 x = self.encoder.norm(x)
@@ -174,10 +206,15 @@ class ControlNetDenoiser(nn.Module):
             x = xseq
             residuals = []
             for layer in self.encoder.layers:
-                x = layer(x)
+                x = layer(x, src_key_padding_mask=attn_pad_mask)
+                if valid_mask is not None:
+                    x = x * valid_mask.unsqueeze(-1)
                 residuals.append(x)
             if self.encoder.norm is not None:
                 x = self.encoder.norm(x)
+
+        if valid_mask is not None:
+            residuals = [r * valid_mask.unsqueeze(-1) for r in residuals]
 
         return residuals
 

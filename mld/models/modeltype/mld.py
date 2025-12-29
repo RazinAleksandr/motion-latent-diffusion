@@ -896,7 +896,7 @@ class MLD(BaseModel):
         controlnet_residuals = None
         if self.is_controlnet and controlnet_cond is not None:
             controlnet_residuals = self.controlnet(
-                sample=latents,
+                sample=noisy_latents,
                 timestep=timesteps,
                 encoder_hidden_states=encoder_hidden_states,
                 controlnet_cond=controlnet_cond,
