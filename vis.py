@@ -78,9 +78,16 @@ def render_motion_to_gif(data_path, motion_id, output_name=None):
 # --- CONFIGURATION ---
 # PATH_TO_DATA = "/Users/aleksandrrazin/work/research/3d/motion-latent-diffusion/results/mld/test_ft/samples_2025-12-24-16-04-18"
 # PATH_TO_DATA = "/Users/aleksandrrazin/work/research/3d/motion-latent-diffusion/results/mld/mld_controlnet_train/samples_2025-12-24-23-27-31"
-PATH_TO_DATA = "/Users/aleksandrrazin/work/research/3d/motion-latent-diffusion/results/mld/mld_controlnet_train_exp1/samples_2025-12-25-23-59-59"
-ID_TO_SHOW = "Example_196_batch0_0"
+PATH_TO_DATA = "results/mld/mld_controlnet_train_exp6/samples_2025-12-30-11-30-51/"  # running without controlnet epoch99
+PATH_TO_DATA = "results/mld/mld_controlnet_train_exp6/samples_2025-12-30-11-31-49/"  # running with controlnet epoch99
+PATH_TO_DATA = "results/mld/mld_controlnet_train_exp6/samples_2025-12-30-11-33-30/"  # running with controlnet epoch3
+PATH_TO_DATA = "results/mld/mld_controlnet_train_exp6/samples_2025-12-30-11-35-50/"  # running with controlnet epoch25
+PATH_TO_DATA = "results/mld/mld_controlnet_train_exp6/samples_2025-12-30-11-41-23/"  # raise hands with controlnet epoch25
+PATH_TO_DATA = "results/mld/mld_controlnet_train_exp6/samples_2025-12-30-11-44-08/"  # raise hands without controlnet epoch25
+ID_TO_SHOW = "Example_40_batch0_0"
 
 render_motion_to_gif(
-    PATH_TO_DATA, ID_TO_SHOW, output_name="w_controlnet_runing_with_pose_fixed.gif"
+    PATH_TO_DATA,
+    ID_TO_SHOW,
+    output_name="mld_controlnet_train_exp6_e25_controlnet_scale_0.0_hands.gif",
 )

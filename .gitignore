@@ -3,3 +3,6 @@ results
 experiments
 __pycache__
 checkpoints
+.DS_Store
+*.gif
+demo/*/

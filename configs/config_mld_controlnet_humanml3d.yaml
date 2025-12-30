@@ -3,7 +3,7 @@
 ####################################
 
 # Experiment name, more details in Section 'Experiment Name Explanation'
-NAME: mld_controlnet_train_exp5
+NAME: mld_controlnet_train_exp6
 # Debug mode. Set to True will enter the debug mode, then the program will
 # 1. use a tiny dataset for trianing and evaluation
 # 2. validate more intensively
@@ -29,7 +29,7 @@ TRAIN:
   # Total epochs for training
   END_EPOCH: 100
 
-  RESUME: "" # Resume training from this path
+  RESUME: experiments/mld/mld_controlnet_train_exp6 # Resume training from this path
   PRETRAINED_VAE: "./checkpoints/mld_humanml3d_checkpoint/1222_mld_humanml3d_FID041.ckpt" # vae model path
   PRETRAINED: "./checkpoints/mld_humanml3d_checkpoint/1222_mld_humanml3d_FID041.ckpt"
 
@@ -54,7 +54,7 @@ EVAL:
 # The following are testing settings
 #####################################
 TEST:
-  CHECKPOINTS: experiments/mld/debug--mld_controlnet_train_exp1/checkpoints/epoch=99.ckpt # Pretrained model path
+  CHECKPOINTS: experiments/mld/mld_controlnet_train_exp6/checkpoints/epoch=3.ckpt #experiments/mld/mld_controlnet_train_exp6/checkpoints/epoch=3.ckpt # Pretrained model path
   DATASETS: ["humanml3d"] # training datasets
   SPLIT: test
   BATCH_SIZE: 1 # training Batch size
@@ -104,7 +104,7 @@ model:
   guidance_scale: 7.5 #
   guidance_uncondp: 0.1 # 0.1 0.25
   is_controlnet: true
-  controlnet_scale: 1.0
+  controlnet_scale: 0.0 #1.0
   controlnet_train_only: true
 
 #####################################

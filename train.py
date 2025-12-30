@@ -1,4 +1,10 @@
 import os
+
+# This bypasses the PyTorch 2.6 security check for all loads in this script
+os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+import typing
 from pprint import pformat
 
 import pytorch_lightning as pl
@@ -6,8 +12,7 @@ import torch
 from omegaconf import OmegaConf
 from pytorch_lightning import loggers as pl_loggers
 from pytorch_lightning.callbacks import ModelCheckpoint
-
-# from pytorch_lightning.strategies.ddp import DDPStrategy
+from torch.serialization import add_safe_globals
 
 from mld.callback import ProgressLogger
 from mld.config import parse_args
@@ -15,7 +20,17 @@ from mld.data.get_data import get_datasets
 from mld.models.get_model import get_model
 from mld.utils.logger import create_logger
 
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
+# from pytorch_lightning.strategies.ddp import DDPStrategy
+# allow OmegaConf objects in checkpoints when weights_only=True default kicks in
+try:
+    from omegaconf.base import ContainerMetadata, Node
+    from omegaconf.dictconfig import DictConfig
+    from omegaconf.listconfig import ListConfig
+
+    # REMOVED typing.Any from the list below
+    add_safe_globals([DictConfig, ListConfig, ContainerMetadata, Node])
+except Exception:
+    pass
 
 
 def main():
@@ -167,9 +182,9 @@ def main():
     # strict load vae model
     if cfg.TRAIN.PRETRAINED_VAE:
         logger.info("Loading pretrain vae from {}".format(cfg.TRAIN.PRETRAINED_VAE))
-        state_dict = torch.load(cfg.TRAIN.PRETRAINED_VAE, map_location="cpu")[
-            "state_dict"
-        ]
+        state_dict = torch.load(
+            cfg.TRAIN.PRETRAINED_VAE, map_location="cpu", weights_only=False
+        )["state_dict"]
         # extract encoder/decoder
         from collections import OrderedDict
 
@@ -183,7 +198,9 @@ def main():
     if cfg.TRAIN.PRETRAINED:
         logger.info("Loading pretrain mode from {}".format(cfg.TRAIN.PRETRAINED))
         logger.info("Attention! VAE will be recovered")
-        state_dict = torch.load(cfg.TRAIN.PRETRAINED, map_location="cpu")["state_dict"]
+        state_dict = torch.load(
+            cfg.TRAIN.PRETRAINED, map_location="cpu", weights_only=False
+        )["state_dict"]
         # remove mismatched and unused params
         from collections import OrderedDict
 

@@ -10,6 +10,8 @@ import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.data import ConcatDataset, DataLoader
 
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation, PillowWriter
 # from torchsummary import summary
 from tqdm import tqdm
 
@@ -37,6 +39,88 @@ def normalize_control_pose(pose_seq, joints_num=22):
     feats = torch.from_numpy(feats).float().unsqueeze(0)
     joints = mp.recover_from_ric(feats, joints_num).squeeze(0).cpu().numpy()
     return joints
+
+
+# 3D stick-figure rendering for a single motion to GIF
+t2m_kinematic_chain = [
+    [0, 1, 4, 7, 10],
+    [0, 2, 5, 8, 11],
+    [0, 3, 6, 9, 12, 15],
+    [9, 13, 16, 18, 20],
+    [9, 14, 17, 19, 21],
+]
+
+
+def render_motion_to_gif(joints_np, out_path, fps=20):
+    # joints_np: [T, 22, 3]
+    if joints_np.shape[1] > 22:
+        joints_np = joints_np[:, :22, :]
+
+    # center on root in X/Z
+    root = joints_np[:, 0, :]
+    joints = joints_np.copy()
+    joints[:, :, 0] -= root[:, None, 0]
+    joints[:, :, 2] -= root[:, None, 2]
+
+    # radius for consistent view
+    extent = float(np.max(np.abs(joints))) if joints.size else 1.0
+    radius = max(1.0, extent + 0.2)
+
+    fig = plt.figure(figsize=(6, 6))
+    ax = fig.add_subplot(111, projection="3d")
+
+    def update(frame):
+        ax.clear()
+        ax.set_xlim3d([-radius, radius])
+        ax.set_ylim3d([-radius, radius])
+        ax.set_zlim3d([0, radius * 2])
+        ax.set_xlabel("X")
+        ax.set_ylabel("Z")
+        ax.set_zlabel("Y")
+        curr = joints[frame]
+        for chain in t2m_kinematic_chain:
+            x = curr[chain, 0]
+            y = curr[chain, 2]  # forward
+            z = curr[chain, 1]  # up
+            ax.plot(x, y, z, linewidth=3, marker="o", markersize=5)
+        ax.view_init(elev=20, azim=-45)
+        ax.set_title(f"Frame {frame}")
+
+    ani = FuncAnimation(fig, update, frames=len(joints), interval=50)
+    writer = PillowWriter(fps=fps)
+    ani.save(out_path, writer=writer)
+    plt.close(fig)
+    return out_path
+
+
+def save_control_poses_image(hint_np, out_path):
+    # hint_np: [2, J, 3]
+    if hint_np.shape[1] > 22:
+        hint_np = hint_np[:, :22, :]
+    fig = plt.figure(figsize=(6, 3))
+    titles = ["Start", "End"]
+    for idx in range(2):
+        ax = fig.add_subplot(1, 2, idx + 1, projection="3d")
+        pose = hint_np[idx]
+        pose = pose.copy()
+        pose[:, 0] -= pose[0, 0]
+        pose[:, 2] -= pose[0, 2]
+        extent = float(np.max(np.abs(pose))) if pose.size else 1.0
+        radius = max(1.0, extent + 0.2)
+        for chain in t2m_kinematic_chain:
+            x = pose[chain, 0]
+            y = pose[chain, 2]
+            z = pose[chain, 1]
+            ax.plot(x, y, z, linewidth=3, marker="o", markersize=5)
+        ax.set_xlim3d([-radius, radius])
+        ax.set_ylim3d([-radius, radius])
+        ax.set_zlim3d([0, radius * 2])
+        ax.view_init(elev=20, azim=-45)
+        ax.set_title(titles[idx])
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=120)
+    plt.close(fig)
+    return out_path
 
 
 def main():
@@ -201,12 +285,16 @@ def main():
                     )
                 if control_pose.shape[0] == 1:
                     control_pose = np.repeat(control_pose, len(text), axis=0)
+                raw_control_pose = torch.from_numpy(control_pose).float().to(device)
                 normed = []
                 for pose_seq in control_pose:
                     normed_seq = normalize_control_pose(pose_seq, joints_num=22)
                     normed.append(normed_seq[[0, -1]])
                 control_pose = np.stack(normed, axis=0).astype(np.float32)
-                batch["control_hint"] = torch.from_numpy(control_pose).float().to(device)
+                batch["control_hint"] = (
+                    torch.from_numpy(control_pose).float().to(device)
+                )
+                batch["control_hint_raw"] = raw_control_pose
 
             for rep in range(cfg.DEMO.REPLICATION):
                 # text motion transfer
@@ -232,6 +320,62 @@ def main():
                         text_file.write(batch["text"][i])
                     np.save(npypath, joints[i].detach().cpu().numpy())
                     logger.info(f"Motions are generated here:\n{npypath}")
+
+                    # auto GIF export
+                    ckpt_tag = os.path.basename(cfg.TEST.CHECKPOINTS) if hasattr(cfg, "TEST") else ""
+                    ckpt_tag = ckpt_tag.replace(".ckpt", "").replace("epoch=", "e")
+                    scale_tag = getattr(cfg.model, "controlnet_scale", None)
+                    input_tag = os.path.splitext(os.path.basename(cfg.DEMO.EXAMPLE or ""))[0]
+                    gif_name_parts = [
+                        input_tag or "sample",
+                        f"len{length[i]}",
+                        ckpt_tag or "ckpt",
+                    ]
+                    if scale_tag is not None:
+                        gif_name_parts.append(f"scale{scale_tag}")
+                    gif_name_parts.append(f"{i}")
+                    gif_name = "_".join(gif_name_parts) + ".gif"
+                    gif_path = os.path.join(output_dir, gif_name)
+                    try:
+                        render_motion_to_gif(joints[i].detach().cpu().numpy(), gif_path, fps=cfg.DEMO.FRAME_RATE)
+                        logger.info(f"GIF saved to {gif_path}")
+                    except Exception as e:
+                        logger.warning(f"Failed to save GIF {gif_path}: {e}")
+
+                    # control pose preview and simple HTML report
+                    pose_img_path = None
+                    if "control_hint_raw" in batch:
+                        try:
+                            pose_img_path = os.path.join(output_dir, gif_name.replace(".gif", "_poses.png"))
+                            save_control_poses_image(
+                                batch["control_hint_raw"][i].detach().cpu().numpy(),
+                                pose_img_path,
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to save control poses image: {e}")
+                    elif "control_hint" in batch:
+                        try:
+                            pose_img_path = os.path.join(output_dir, gif_name.replace(".gif", "_poses.png"))
+                            save_control_poses_image(
+                                batch["control_hint"][i].detach().cpu().numpy(),
+                                pose_img_path,
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to save control poses image: {e}")
+
+                    report_path = os.path.join(output_dir, gif_name.replace(".gif", "_report.html"))
+                    try:
+                        with open(report_path, "w") as f:
+                            f.write("<html><body>\n")
+                            f.write(f"<h3>Text: {batch['text'][i]}</h3>\n")
+                            f.write(f"<p>Length: {length[i]} | Checkpoint: {ckpt_tag} | Control scale: {scale_tag}</p>\n")
+                            if pose_img_path and os.path.exists(pose_img_path):
+                                f.write(f"<div><h4>Control Poses</h4><img src='{os.path.basename(pose_img_path)}' width='400'></div>\n")
+                            f.write(f"<div><h4>Generated</h4><img src='{os.path.basename(gif_path)}' width='400'></div>\n")
+                            f.write("</body></html>")
+                        logger.info(f"Report saved to {report_path}")
+                    except Exception as e:
+                        logger.warning(f"Failed to save report {report_path}: {e}")
 
                 if cfg.DEMO.OUTALL:
                     rep_lst.append(joints)
@@ -381,3 +525,11 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# python demo.py --cfg configs/config_mld_controlnet_humanml3d.yaml
+# python demo.py \
+#   --cfg configs/config_mld_controlnet_humanml3d.yaml \
+#   --example ./demo/example_input.txt \
+#   --control_pose ./demo/control_pose.npy \
+#   --out_dir ./results/demo_run
